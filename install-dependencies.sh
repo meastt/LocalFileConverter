@@ -64,6 +64,15 @@ else
     echo "✅ 7-Zip installed!"
 fi
 
+# Install yt-dlp (for video downloading)
+if command -v yt-dlp &> /dev/null; then
+    echo "✅ yt-dlp is already installed"
+else
+    echo "📦 Installing yt-dlp (video downloading)..."
+    brew install yt-dlp
+    echo "✅ yt-dlp installed!"
+fi
+
 echo ""
 echo "=================================="
 echo "✅ All dependencies installed!"
@@ -74,6 +83,7 @@ echo "  - FFmpeg: $(ffmpeg -version | head -n1)"
 echo "  - ImageMagick: $(magick --version | head -n1)"
 echo "  - Pandoc: $(pandoc --version | head -n1)"
 echo "  - 7-Zip: $(7z | head -n2 | tail -n1)"
+echo "  - yt-dlp: $(yt-dlp --version)"
 echo ""
 echo "You can now build and run Local File Converter!"
 echo ""

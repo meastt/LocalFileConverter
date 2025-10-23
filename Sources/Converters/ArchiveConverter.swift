@@ -50,8 +50,9 @@ class ArchiveConverter: CommandLineConverter, FileConverter {
             guard checkToolAvailability("7z") else {
                 throw ConversionError.toolNotFound("7z")
             }
+            let sevenZipPath = findExecutablePath("7z") ?? "/opt/homebrew/bin/7z"
             _ = try await runCommand(
-                "7z",
+                sevenZipPath,
                 arguments: ["x", inputURL.path, "-o\(tempDir.path)", "-y"],
                 progressHandler: { progress in progressHandler(progress * 0.5) }
             )
@@ -65,8 +66,9 @@ class ArchiveConverter: CommandLineConverter, FileConverter {
             guard checkToolAvailability("unrar") else {
                 throw ConversionError.toolNotFound("unrar")
             }
+            let unrarPath = findExecutablePath("unrar") ?? "/opt/homebrew/bin/unrar"
             _ = try await runCommand(
-                "unrar",
+                unrarPath,
                 arguments: ["x", inputURL.path, tempDir.path],
                 progressHandler: { progress in progressHandler(progress * 0.5) }
             )
@@ -98,8 +100,9 @@ class ArchiveConverter: CommandLineConverter, FileConverter {
             guard checkToolAvailability("7z") else {
                 throw ConversionError.toolNotFound("7z")
             }
+            let sevenZipPath = findExecutablePath("7z") ?? "/opt/homebrew/bin/7z"
             _ = try await runCommand(
-                "7z",
+                sevenZipPath,
                 arguments: ["a", outputURL.path, "\(sourceDir.path)/*"],
                 progressHandler: { progress in progressHandler(0.5 + progress * 0.5) }
             )

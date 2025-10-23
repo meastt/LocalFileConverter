@@ -2,11 +2,14 @@ import Foundation
 
 struct ConversionFile: Identifiable {
     let id = UUID()
-    let url: URL
+    var url: URL
     let fileType: FileType
     var targetFormat: String?
     var status: ConversionStatus?
     var outputURL: URL?
+    var imageProcessingOptions: ImageProcessingOptions?
+    var videoProcessingOptions: VideoProcessingOptions?
+    var metadata: [String: Any] = [:]
 
     var detectedFormats: [String] {
         fileType.supportedConversions
@@ -95,6 +98,11 @@ enum ConversionStatus {
         case .completed: return .green
         case .failed: return .red
         }
+    }
+    
+    var isFailed: Bool {
+        if case .failed = self { return true }
+        return false
     }
 }
 

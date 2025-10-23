@@ -52,3 +52,4 @@ check-tools:
 	@command -v magick >/dev/null 2>&1 && echo "✅ ImageMagick installed" || echo "❌ ImageMagick not found"
 	@command -v pandoc >/dev/null 2>&1 && echo "✅ Pandoc installed" || echo "❌ Pandoc not found"
 	@command -v 7z >/dev/null 2>&1 && echo "✅ 7-Zip installed" || echo "❌ 7-Zip not found"
+	@command -v yt-dlp >/dev/null 2>&1 && echo "✅ yt-dlp installed" || echo "❌ yt-dlp not found"

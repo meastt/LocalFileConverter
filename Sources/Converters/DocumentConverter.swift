@@ -63,7 +63,8 @@ class DocumentConverter: CommandLineConverter, FileConverter {
             break
         }
 
-        _ = try await runCommand("pandoc", arguments: arguments, progressHandler: progressHandler)
+        let pandocPath = findExecutablePath("pandoc") ?? "/opt/homebrew/bin/pandoc"
+        _ = try await runCommand(pandocPath, arguments: arguments, progressHandler: progressHandler)
 
         guard FileManager.default.fileExists(atPath: outputURL.path) else {
             throw ConversionError.conversionFailed("Output file not created")
@@ -83,7 +84,8 @@ class DocumentConverter: CommandLineConverter, FileConverter {
             outputURL.path
         ]
 
-        _ = try await runCommand("cupsfilter", arguments: arguments, progressHandler: progressHandler)
+        let cupsfilterPath = findExecutablePath("cupsfilter") ?? "/usr/bin/cupsfilter"
+        _ = try await runCommand(cupsfilterPath, arguments: arguments, progressHandler: progressHandler)
 
         guard FileManager.default.fileExists(atPath: outputURL.path) else {
             throw ConversionError.conversionFailed("Output file not created")

@@ -3,30 +3,57 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var conversionManager = ConversionManager()
+    @State private var selectedTool: ToolCategory?
     @State private var isDragging = false
+    @State private var showingFilePicker = false
+    @State private var showingURLInput = false
+    @State private var videoURL = ""
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HeaderView()
-
-            // Main Content
-            if conversionManager.files.isEmpty {
-                DropZoneView(isDragging: $isDragging)
+        NavigationSplitView {
+            // Sidebar
+            SidebarView(selectedTool: $selectedTool, conversionManager: conversionManager)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
+        } detail: {
+            // Main Content Area
+            ZStack {
+                if conversionManager.files.isEmpty {
+                    DashboardView(
+                        selectedTool: $selectedTool,
+                        isDragging: $isDragging,
+                        showingFilePicker: $showingFilePicker,
+                        showingURLInput: $showingURLInput,
+                        conversionManager: conversionManager
+                    )
                     .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
                         handleDrop(providers: providers)
                         return true
                     }
-            } else {
-                FileListView(conversionManager: conversionManager)
-            }
-
-            // Footer with actions
-            if !conversionManager.files.isEmpty {
-                FooterView(conversionManager: conversionManager)
+                } else {
+                    WorkspaceView(
+                        conversionManager: conversionManager,
+                        isDragging: $isDragging,
+                        showingFilePicker: $showingFilePicker,
+                        showingURLInput: $showingURLInput
+                    )
+                    .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
+                        handleDrop(providers: providers)
+                        return true
+                    }
+                }
             }
         }
-        .frame(minWidth: 800, minHeight: 600)
+        .frame(minWidth: 1000, minHeight: 700)
+        .fileImporter(
+            isPresented: $showingFilePicker,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            handleFileImport(result)
+        }
+        .sheet(isPresented: $showingURLInput) {
+            URLInputSheet(videoURL: $videoURL, conversionManager: conversionManager, isPresented: $showingURLInput)
+        }
     }
 
     private func handleDrop(providers: [NSItemProvider]) {
@@ -43,232 +70,682 @@ struct ContentView: View {
             }
         }
     }
-}
 
-// MARK: - Header View
-struct HeaderView: View {
-    var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 32))
-                    .foregroundColor(.accentColor)
-                Text("Local File Converter")
-                    .font(.system(size: 28, weight: .bold))
+    private func handleFileImport(_ result: Result<[URL], Error>) {
+        do {
+            let urls = try result.get()
+            for url in urls {
+                conversionManager.addFile(url: url)
             }
-            .padding(.top, 30)
-
-            Text("Convert files locally without uploading to sketchy websites")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .padding(.bottom, 20)
+        } catch {
+            print("File import error: \(error)")
         }
-        .frame(maxWidth: .infinity)
-        .background(Color(NSColor.windowBackgroundColor))
     }
 }
 
-// MARK: - Drop Zone View
-struct DropZoneView: View {
-    @Binding var isDragging: Bool
+// MARK: - Tool Category
+enum ToolCategory: String, CaseIterable, Identifiable {
+    case all = "All Tools"
+    case image = "Images"
+    case video = "Videos"
+    case audio = "Audio"
+    case document = "Documents"
+    case archive = "Archives"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .all: return "square.grid.2x2"
+        case .image: return "photo.on.rectangle.angled"
+        case .video: return "video.badge.waveform"
+        case .audio: return "waveform.badge.mic"
+        case .document: return "doc.richtext"
+        case .archive: return "archivebox.fill"
+        }
+    }
+
+    var gradient: LinearGradient {
+        switch self {
+        case .all:
+            return LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .image:
+            return LinearGradient(colors: [.pink, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .video:
+            return LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .audio:
+            return LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .document:
+            return LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .archive:
+            return LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .all: return "Convert any file type"
+        case .image: return "JPEG, PNG, HEIC, WebP, PDF"
+        case .video: return "MP4, MOV, AVI, MKV, WebM"
+        case .audio: return "MP3, WAV, FLAC, AAC, OGG"
+        case .document: return "PDF, EPUB, DOCX, HTML"
+        case .archive: return "ZIP, 7Z, TAR, RAR"
+        }
+    }
+}
+
+// MARK: - Sidebar View
+struct SidebarView: View {
+    @Binding var selectedTool: ToolCategory?
+    @ObservedObject var conversionManager: ConversionManager
 
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "arrow.down.doc")
-                .font(.system(size: 60))
-                .foregroundColor(isDragging ? .accentColor : .secondary)
-
-            Text("Drag & Drop Files Here")
-                .font(.title2)
-                .fontWeight(.semibold)
-
-            Text("Or click to browse")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-
-            // Supported formats
+        VStack(alignment: .leading, spacing: 0) {
+            // App Header
             VStack(alignment: .leading, spacing: 8) {
-                FormatRow(icon: "photo", text: "Images: JPEG, PNG, HEIC, TIFF, GIF, BMP, WebP, SVG")
-                FormatRow(icon: "video", text: "Video: MP4, MOV, AVI, MKV, WebM, HEVC")
-                FormatRow(icon: "waveform", text: "Audio: MP3, WAV, FLAC, AAC, OGG, ALAC")
-                FormatRow(icon: "doc", text: "Documents: PDF, EPUB, MOBI, DOCX, ODT")
-                FormatRow(icon: "archivebox", text: "Archives: ZIP, 7Z, RAR")
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("File Converter")
+                            .font(.system(size: 18, weight: .bold))
+                        Text("Local & Private")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 20)
+                .padding(.bottom, 16)
             }
-            .padding(.top, 20)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(isDragging ? Color.accentColor.opacity(0.1) : Color(NSColor.controlBackgroundColor))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .strokeBorder(
-                            style: StrokeStyle(lineWidth: 2, dash: [10])
+
+            Divider()
+
+            // Tool Categories
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(ToolCategory.allCases) { category in
+                        SidebarItem(
+                            category: category,
+                            isSelected: selectedTool == category
                         )
-                        .foregroundColor(isDragging ? .accentColor : .secondary.opacity(0.5))
-                )
-        )
-        .padding(40)
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                selectedTool = category
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+
+            Spacer()
+
+            // Stats
+            if !conversionManager.files.isEmpty {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "doc.on.doc")
+                            .foregroundColor(.secondary)
+                        Text("\(conversionManager.files.count) files")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    }
+
+                    let completedCount = conversionManager.files.filter {
+                        if case .completed = $0.status { return true }
+                        return false
+                    }.count
+
+                    if completedCount > 0 {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("\(completedCount) completed")
+                                .font(.system(size: 13))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
     }
 }
 
-struct FormatRow: View {
-    let icon: String
-    let text: String
+// MARK: - Sidebar Item
+struct SidebarItem: View {
+    let category: ToolCategory
+    let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 16))
-                .foregroundColor(.accentColor)
+            Image(systemName: category.icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(isSelected ? category.gradient : .linearGradient(colors: [.secondary], startPoint: .top, endPoint: .bottom))
                 .frame(width: 24)
-            Text(text)
-                .font(.system(size: 13))
-                .foregroundColor(.secondary)
+
+            Text(category.rawValue)
+                .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                .foregroundColor(isSelected ? .primary : .secondary)
+
+            Spacer()
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+        )
+        .padding(.horizontal, 8)
     }
 }
 
-// MARK: - File List View
-struct FileListView: View {
+// MARK: - Dashboard View
+struct DashboardView: View {
+    @Binding var selectedTool: ToolCategory?
+    @Binding var isDragging: Bool
+    @Binding var showingFilePicker: Bool
+    @Binding var showingURLInput: Bool
     @ObservedObject var conversionManager: ConversionManager
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(conversionManager.files) { file in
-                    FileRowView(file: file, conversionManager: conversionManager)
+            VStack(spacing: 32) {
+                // Hero Section
+                VStack(spacing: 16) {
+                    Image(systemName: isDragging ? "arrow.down.circle.fill" : "sparkles")
+                        .font(.system(size: 56))
+                        .foregroundStyle(.linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .scaleEffect(isDragging ? 1.1 : 1.0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isDragging)
+
+                    Text(isDragging ? "Drop Files Here!" : "Choose Your Tool")
+                        .font(.system(size: 32, weight: .bold))
+
+                    Text("Convert files locally without uploading to the cloud")
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
                 }
+                .padding(.top, 40)
+
+                // Quick Actions
+                HStack(spacing: 16) {
+                    QuickActionButton(
+                        icon: "folder.badge.plus",
+                        title: "Browse Files",
+                        color: .blue
+                    ) {
+                        showingFilePicker = true
+                    }
+
+                    QuickActionButton(
+                        icon: "link.badge.plus",
+                        title: "Paste URL",
+                        color: .purple
+                    ) {
+                        showingURLInput = true
+                    }
+                }
+                .padding(.horizontal, 40)
+
+                // Tool Categories Grid
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: 20),
+                    GridItem(.flexible(), spacing: 20)
+                ], spacing: 20) {
+                    ForEach(ToolCategory.allCases) { category in
+                        ToolCategoryCard(category: category)
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                    selectedTool = category
+                                }
+                                showingFilePicker = true
+                            }
+                    }
+                }
+                .padding(.horizontal, 40)
+                .padding(.bottom, 40)
             }
-            .padding()
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(isDragging ? Color.accentColor.opacity(0.1) : Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .strokeBorder(
+                            style: StrokeStyle(lineWidth: 2, dash: isDragging ? [10] : [])
+                        )
+                        .foregroundColor(isDragging ? .accentColor : .clear)
+                        .animation(.easeInOut(duration: 0.3), value: isDragging)
+                )
+        )
+        .padding()
+    }
+}
+
+// MARK: - Quick Action Button
+struct QuickActionButton: View {
+    let icon: String
+    let title: String
+    let color: Color
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(color.opacity(isHovered ? 0.2 : 0.1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(color.opacity(isHovered ? 0.5 : 0.3), lineWidth: 1.5)
+            )
+            .scaleEffect(isHovered ? 1.02 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
         }
     }
 }
 
-// MARK: - File Row View
-struct FileRowView: View {
+// MARK: - Tool Category Card
+struct ToolCategoryCard: View {
+    let category: ToolCategory
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: category.icon)
+                    .font(.system(size: 32, weight: .medium))
+                    .foregroundStyle(category.gradient)
+
+                Spacer()
+
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.secondary)
+                    .opacity(isHovered ? 1 : 0)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(category.rawValue)
+                    .font(.system(size: 18, weight: .semibold))
+
+                Text(category.description)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(20)
+        .frame(height: 140)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(NSColor.controlBackgroundColor))
+                .shadow(color: .black.opacity(isHovered ? 0.15 : 0.08), radius: isHovered ? 12 : 6, y: isHovered ? 6 : 3)
+        )
+        .scaleEffect(isHovered ? 1.03 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
+// MARK: - Workspace View
+struct WorkspaceView: View {
+    @ObservedObject var conversionManager: ConversionManager
+    @Binding var isDragging: Bool
+    @Binding var showingFilePicker: Bool
+    @Binding var showingURLInput: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Toolbar
+            HStack {
+                Button(action: { showingFilePicker = true }) {
+                    Label("Add Files", systemImage: "plus.circle.fill")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: { showingURLInput = true }) {
+                    Label("Add URL", systemImage: "link")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                Button(action: { conversionManager.clearAll() }) {
+                    Label("Clear All", systemImage: "trash")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+            }
+            .padding()
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+
+            // File List
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    ForEach(conversionManager.files) { file in
+                        EnhancedFileRowView(file: file, conversionManager: conversionManager)
+                            .transition(.asymmetric(
+                                insertion: .scale.combined(with: .opacity),
+                                removal: .opacity
+                            ))
+                    }
+                }
+                .padding(20)
+            }
+
+            // Footer Actions
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(conversionManager.files.count) files")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Ready to convert")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Button("Convert All") {
+                    conversionManager.convertAll()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(conversionManager.isConverting)
+            }
+            .padding(20)
+            .background(
+                Rectangle()
+                    .fill(Color(NSColor.windowBackgroundColor))
+                    .shadow(color: .black.opacity(0.1), radius: 10, y: -5)
+            )
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(isDragging ? Color.accentColor : Color.clear, lineWidth: 2)
+                .animation(.easeInOut(duration: 0.2), value: isDragging)
+        )
+    }
+}
+
+// MARK: - Enhanced File Row View
+struct EnhancedFileRowView: View {
     let file: ConversionFile
     @ObservedObject var conversionManager: ConversionManager
+    @State private var isHovered = false
+    @State private var showingOptions = false
 
     var body: some View {
         HStack(spacing: 16) {
-            // File icon
-            Image(systemName: file.iconName)
-                .font(.system(size: 32))
-                .foregroundColor(.accentColor)
-                .frame(width: 44, height: 44)
+            // File Icon with Gradient Background
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(file.fileType.gradient)
+                    .frame(width: 56, height: 56)
 
-            // File info
-            VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: file.iconName)
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundColor(.white)
+            }
+
+            // File Info
+            VStack(alignment: .leading, spacing: 6) {
                 Text(file.url.lastPathComponent)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
+                    .lineLimit(1)
 
-                HStack(spacing: 8) {
-                    Text(file.fileSize)
+                HStack(spacing: 12) {
+                    Label(file.fileSize, systemImage: "archivebox")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
 
                     if let status = file.status {
-                        StatusBadge(status: status)
+                        EnhancedStatusBadge(status: status)
                     }
                 }
             }
 
             Spacer()
 
-            // Output format picker
-            if file.status == nil || file.status == .failed {
-                Picker("Convert to", selection: Binding(
-                    get: { file.targetFormat ?? file.detectedFormats.first ?? "" },
-                    set: { newValue in
-                        conversionManager.setTargetFormat(for: file.id, format: newValue)
-                    }
-                )) {
+            // Format Selector or Actions
+            if file.status == nil || file.status?.isFailed == true {
+                Menu {
                     ForEach(file.detectedFormats, id: \.self) { format in
-                        Text(format.uppercased()).tag(format)
+                        Button(format.uppercased()) {
+                            conversionManager.setTargetFormat(for: file.id, format: format)
+                        }
                     }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("→ \(file.targetFormat?.uppercased() ?? "FORMAT")")
+                            .font(.system(size: 13, weight: .semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.accentColor.opacity(0.1))
+                    )
                 }
-                .pickerStyle(.menu)
-                .frame(width: 120)
+                .buttonStyle(.plain)
             }
 
-            // Progress or action button
+            // Progress or Result Actions
             if let status = file.status {
                 switch status {
                 case .converting(let progress):
-                    ProgressView(value: progress)
-                        .frame(width: 100)
-                case .completed:
-                    Button("Show") {
-                        if let outputURL = file.outputURL {
-                            NSWorkspace.shared.selectFile(outputURL.path, inFileViewerRootedAtPath: "")
-                        }
+                    VStack(spacing: 6) {
+                        ProgressView(value: progress)
+                            .frame(width: 120)
+                        Text("\(Int(progress * 100))%")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.bordered)
+
+                case .completed:
+                    HStack(spacing: 8) {
+                        Button(action: {
+                            if let outputURL = file.outputURL {
+                                NSWorkspace.shared.activateFileViewerSelecting([outputURL])
+                            }
+                        }) {
+                            Label("Show", systemImage: "folder")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
                 case .failed(let error):
-                    Text(error)
-                        .font(.system(size: 11))
-                        .foregroundColor(.red)
-                        .frame(maxWidth: 150)
-                        .lineLimit(2)
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(error)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .frame(maxWidth: 150)
+                    }
                 }
             }
 
-            // Remove button
+            // Remove Button
             Button(action: {
-                conversionManager.removeFile(id: file.id)
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    conversionManager.removeFile(id: file.id)
+                }
             }) {
                 Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20))
                     .foregroundColor(.secondary)
+                    .opacity(isHovered ? 1 : 0.3)
             }
             .buttonStyle(.plain)
         }
-        .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(10)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(NSColor.controlBackgroundColor))
+                .shadow(color: .black.opacity(isHovered ? 0.12 : 0.06), radius: isHovered ? 8 : 4, y: 2)
+        )
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 
-struct StatusBadge: View {
+// MARK: - Enhanced Status Badge
+struct EnhancedStatusBadge: View {
     let status: ConversionStatus
 
     var body: some View {
-        Text(status.displayText)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundColor(.white)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(status.color)
-            .cornerRadius(4)
+        HStack(spacing: 4) {
+            Image(systemName: status.iconName)
+                .font(.system(size: 10, weight: .bold))
+            Text(status.displayText)
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(status.color.opacity(0.2))
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(status.color.opacity(0.5), lineWidth: 1)
+        )
+        .foregroundColor(status.color)
     }
 }
 
-// MARK: - Footer View
-struct FooterView: View {
+// MARK: - URL Input Sheet
+struct URLInputSheet: View {
+    @Binding var videoURL: String
     @ObservedObject var conversionManager: ConversionManager
+    @Binding var isPresented: Bool
+    @State private var isLoading = false
 
     var body: some View {
-        HStack {
-            Button("Clear All") {
-                conversionManager.clearAll()
+        VStack(spacing: 24) {
+            // Header
+            HStack {
+                Image(systemName: "link.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Download from URL")
+                        .font(.system(size: 20, weight: .bold))
+                    Text("Paste a video URL from YouTube, Instagram, TikTok, etc.")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
             }
-            .buttonStyle(.bordered)
 
-            Spacer()
+            // URL Input
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("https://www.youtube.com/watch?v=...", text: $videoURL)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 14))
 
-            Text("\(conversionManager.files.count) file(s)")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-
-            Spacer()
-
-            Button("Convert All") {
-                conversionManager.convertAll()
+                Text("Supported: YouTube, Instagram, TikTok, Twitter, Facebook, Vimeo, and more")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(conversionManager.isConverting)
+
+            // Actions
+            HStack {
+                Button("Cancel") {
+                    isPresented = false
+                    videoURL = ""
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("Download") {
+                    Task {
+                        isLoading = true
+                        await conversionManager.addVideoURL(videoURL)
+                        isLoading = false
+                        isPresented = false
+                        videoURL = ""
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(videoURL.isEmpty || isLoading)
+                .keyboardShortcut(.defaultAction)
+
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                }
+            }
         }
-        .padding()
-        .background(Color(NSColor.windowBackgroundColor))
+        .padding(24)
+        .frame(width: 500)
+    }
+}
+
+// MARK: - Extensions
+extension FileType {
+    var gradient: LinearGradient {
+        switch self {
+        case .image:
+            return LinearGradient(colors: [.pink, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .video:
+            return LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .audio:
+            return LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .document:
+            return LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .archive:
+            return LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .unknown:
+            return LinearGradient(colors: [.gray], startPoint: .top, endPoint: .bottom)
+        }
+    }
+}
+
+extension ConversionStatus {
+    var iconName: String {
+        switch self {
+        case .converting: return "arrow.triangle.2.circlepath"
+        case .completed: return "checkmark.circle.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        }
     }
 }

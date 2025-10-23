@@ -72,7 +72,8 @@ class AudioConverter: CommandLineConverter, FileConverter {
 
         arguments.append(outputURL.path)
 
-        _ = try await runCommand("ffmpeg", arguments: arguments, progressHandler: progressHandler)
+        let ffmpegPath = findExecutablePath("ffmpeg") ?? "/opt/homebrew/bin/ffmpeg"
+        _ = try await runCommand(ffmpegPath, arguments: arguments, progressHandler: progressHandler)
 
         guard FileManager.default.fileExists(atPath: outputURL.path) else {
             throw ConversionError.conversionFailed("Output file not created")

@@ -96,6 +96,31 @@ class CommandLineConverter {
             return false
         }
     }
+    
+    func findExecutablePath(_ toolName: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        process.arguments = [toolName]
+        
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = Pipe()
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+            
+            if process.terminationStatus == 0 {
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return output
+            }
+        } catch {
+            // Ignore errors
+        }
+        
+        return nil
+    }
 
     func generateOutputURL(for inputURL: URL, targetFormat: String) -> URL {
         let outputDirectory = FileManager.default.temporaryDirectory
