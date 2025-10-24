@@ -54,6 +54,11 @@ struct ContentView: View {
         .sheet(isPresented: $showingURLInput) {
             URLInputSheet(videoURL: $videoURL, conversionManager: conversionManager, isPresented: $showingURLInput)
         }
+        .alert(conversionManager.alertTitle, isPresented: $conversionManager.showingAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(conversionManager.alertMessage)
+        }
     }
 
     private func handleDrop(providers: [NSItemProvider]) {
@@ -593,6 +598,11 @@ struct EnhancedFileRowView: View {
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                             .frame(maxWidth: 150)
+
+                        Button("Retry") {
+                            conversionManager.retryFile(id: file.id)
+                        }
+                        .buttonStyle(.bordered)
                     }
                 }
             }
