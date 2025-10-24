@@ -10,40 +10,58 @@ class VideoDownloader: CommandLineConverter {
         guard checkToolAvailability("yt-dlp") else {
             throw ConversionError.toolNotFound("yt-dlp (YouTube Downloader)")
         }
-        
+
+        // Use a unique directory for each download to avoid conflicts
+        let uniqueID = UUID().uuidString
         let outputDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LocalFileConverter_Downloads", isDirectory: true)
-        
+            .appendingPathComponent("LocalFileConverter_Download_\(uniqueID)", isDirectory: true)
+
         try? FileManager.default.createDirectory(
             at: outputDir,
             withIntermediateDirectories: true
         )
-        
+
         let outputTemplate = outputDir.appendingPathComponent("%(title)s.%(ext)s").path
-        
+
         let arguments = [
             url,
             "-o", outputTemplate,
-            "--no-playlist", // Download single video, not playlist
-            "--format", "best[height<=1080]", // Max 1080p quality
-            "--embed-metadata", // Keep metadata
-            "--write-info-json" // Write info file
+            "--no-playlist",
+            "--format", "best[height<=1080]",
+            "--embed-metadata",
+            "--no-warnings"
         ]
-        
+
         let ytdlpPath = findExecutablePath("yt-dlp") ?? "/opt/homebrew/bin/yt-dlp"
-        _ = try await runCommand(ytdlpPath, arguments: arguments, progressHandler: progressHandler)
-        
+
+        // Create a progress updater
+        let progressTask = Task {
+            for i in 1...20 {
+                try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+                let progress = Double(i) * 0.045 // Up to 0.90
+                progressHandler(progress)
+            }
+        }
+
+        defer { progressTask.cancel() }
+
+        _ = try await runCommand(ytdlpPath, arguments: arguments, progressHandler: { _ in })
+
+        progressTask.cancel()
+        progressHandler(1.0)
+
         // Find the downloaded file
         let files = try FileManager.default.contentsOfDirectory(at: outputDir, includingPropertiesForKeys: nil)
+
         let videoFiles = files.filter { file in
             let ext = file.pathExtension.lowercased()
             return ["mp4", "webm", "mkv", "avi", "mov"].contains(ext)
         }
-        
+
         guard let downloadedFile = videoFiles.first else {
             throw ConversionError.conversionFailed("No video file found after download")
         }
-        
+
         return downloadedFile
     }
     
@@ -51,13 +69,14 @@ class VideoDownloader: CommandLineConverter {
         guard checkToolAvailability("yt-dlp") else {
             throw ConversionError.toolNotFound("yt-dlp")
         }
-        
+
         let arguments = [
             url,
             "--dump-json",
-            "--no-playlist"
+            "--no-playlist",
+            "--no-warnings"
         ]
-        
+
         let ytdlpPath = findExecutablePath("yt-dlp") ?? "/opt/homebrew/bin/yt-dlp"
         let output = try await runCommand(ytdlpPath, arguments: arguments, progressHandler: { _ in })
         

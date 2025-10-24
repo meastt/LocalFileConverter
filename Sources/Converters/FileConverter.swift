@@ -43,40 +43,73 @@ class CommandLineConverter {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
+        // Use NSLock for thread-safe data collection
+        let outputLock = NSLock()
+        let errorLock = NSLock()
+        var outputData = Data()
+        var errorData = Data()
+
+        let outputHandle = outputPipe.fileHandleForReading
+        let errorHandle = errorPipe.fileHandleForReading
+
+        // Set up background reading
+        outputHandle.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.count > 0 {
+                outputLock.lock()
+                outputData.append(data)
+                outputLock.unlock()
+            }
+        }
+
+        errorHandle.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.count > 0 {
+                errorLock.lock()
+                errorData.append(data)
+                errorLock.unlock()
+            }
+        }
+
         return try await withCheckedThrowingContinuation { continuation in
-            Task {
-                do {
-                    try process.run()
+            do {
+                try process.run()
 
-                    // Simulate progress updates
-                    var progress: Double = 0.0
-                    let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
-                        progress += 0.05
-                        if progress <= 0.9 {
-                            progressHandler(progress)
-                        }
-                        if progress >= 1.0 {
-                            timer.invalidate()
-                        }
-                    }
-
+                // Wait for process in background
+                DispatchQueue.global(qos: .userInitiated).async {
                     process.waitUntilExit()
-                    timer.invalidate()
 
-                    let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                    // Give a moment for final data to be read
+                    Thread.sleep(forTimeInterval: 0.2)
 
-                    if process.terminationStatus == 0 {
+                    // Stop reading
+                    outputHandle.readabilityHandler = nil
+                    errorHandle.readabilityHandler = nil
+
+                    let status = process.terminationStatus
+
+                    outputLock.lock()
+                    let finalOutput = outputData
+                    outputLock.unlock()
+
+                    errorLock.lock()
+                    let finalError = errorData
+                    errorLock.unlock()
+
+                    DispatchQueue.main.async {
                         progressHandler(1.0)
-                        let output = String(data: outputData, encoding: .utf8) ?? ""
-                        continuation.resume(returning: output)
-                    } else {
-                        let error = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-                        continuation.resume(throwing: ConversionError.conversionFailed(error))
+
+                        if status == 0 {
+                            let output = String(data: finalOutput, encoding: .utf8) ?? ""
+                            continuation.resume(returning: output)
+                        } else {
+                            let error = String(data: finalError, encoding: .utf8) ?? "Unknown error"
+                            continuation.resume(throwing: ConversionError.conversionFailed(error))
+                        }
                     }
-                } catch {
-                    continuation.resume(throwing: error)
                 }
+            } catch {
+                continuation.resume(throwing: error)
             }
         }
     }
@@ -122,9 +155,15 @@ class CommandLineConverter {
         return nil
     }
 
-    func generateOutputURL(for inputURL: URL, targetFormat: String) -> URL {
-        let outputDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LocalFileConverter", isDirectory: true)
+    func generateOutputURL(for inputURL: URL, targetFormat: String, customOutputDirectory: URL? = nil) -> URL {
+        let outputDirectory: URL
+
+        if let customDir = customOutputDirectory {
+            outputDirectory = customDir
+        } else {
+            outputDirectory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("LocalFileConverter", isDirectory: true)
+        }
 
         try? FileManager.default.createDirectory(
             at: outputDirectory,

@@ -8,6 +8,8 @@ struct ContentView: View {
     @State private var showingFilePicker = false
     @State private var showingURLInput = false
     @State private var videoURL = ""
+    @State private var showingLoadingOverlay = false
+    @State private var loadingMessage = ""
 
     var body: some View {
         NavigationSplitView {
@@ -17,13 +19,17 @@ struct ContentView: View {
         } detail: {
             // Main Content Area
             ZStack {
-                if conversionManager.files.isEmpty {
+                if selectedTool == .settings {
+                    SettingsView()
+                } else if conversionManager.files.isEmpty {
                     DashboardView(
                         selectedTool: $selectedTool,
                         isDragging: $isDragging,
                         showingFilePicker: $showingFilePicker,
                         showingURLInput: $showingURLInput,
-                        conversionManager: conversionManager
+                        conversionManager: conversionManager,
+                        showingLoadingOverlay: $showingLoadingOverlay,
+                        loadingMessage: $loadingMessage
                     )
                     .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
                         handleDrop(providers: providers)
@@ -34,13 +40,23 @@ struct ContentView: View {
                         conversionManager: conversionManager,
                         isDragging: $isDragging,
                         showingFilePicker: $showingFilePicker,
-                        showingURLInput: $showingURLInput
+                        showingURLInput: $showingURLInput,
+                        selectedTool: selectedTool,
+                        showingLoadingOverlay: $showingLoadingOverlay,
+                        loadingMessage: $loadingMessage
                     )
                     .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
                         handleDrop(providers: providers)
                         return true
                     }
                 }
+            }
+
+            // Loading Overlay
+            if showingLoadingOverlay {
+                LoadingOverlay(message: loadingMessage)
+                    .transition(.opacity)
+                    .zIndex(999)
             }
         }
         .frame(minWidth: 1000, minHeight: 700)
@@ -53,6 +69,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingURLInput) {
             URLInputSheet(videoURL: $videoURL, conversionManager: conversionManager, isPresented: $showingURLInput)
+                .interactiveDismissDisabled(false)
         }
     }
 
@@ -91,6 +108,7 @@ enum ToolCategory: String, CaseIterable, Identifiable {
     case audio = "Audio"
     case document = "Documents"
     case archive = "Archives"
+    case settings = "Settings"
 
     var id: String { rawValue }
 
@@ -102,6 +120,7 @@ enum ToolCategory: String, CaseIterable, Identifiable {
         case .audio: return "waveform.badge.mic"
         case .document: return "doc.richtext"
         case .archive: return "archivebox.fill"
+        case .settings: return "gearshape.fill"
         }
     }
 
@@ -119,6 +138,8 @@ enum ToolCategory: String, CaseIterable, Identifiable {
             return LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .archive:
             return LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .settings:
+            return LinearGradient(colors: [.gray, .secondary], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
     }
 
@@ -130,6 +151,7 @@ enum ToolCategory: String, CaseIterable, Identifiable {
         case .audio: return "MP3, WAV, FLAC, AAC, OGG"
         case .document: return "PDF, EPUB, DOCX, HTML"
         case .archive: return "ZIP, 7Z, TAR, RAR"
+        case .settings: return "Configure app preferences"
         }
     }
 }
@@ -253,25 +275,43 @@ struct DashboardView: View {
     @Binding var showingFilePicker: Bool
     @Binding var showingURLInput: Bool
     @ObservedObject var conversionManager: ConversionManager
+    @Binding var showingLoadingOverlay: Bool
+    @Binding var loadingMessage: String
 
     var body: some View {
         ScrollView {
             VStack(spacing: 32) {
                 // Hero Section
                 VStack(spacing: 16) {
-                    Image(systemName: isDragging ? "arrow.down.circle.fill" : "sparkles")
-                        .font(.system(size: 56))
-                        .foregroundStyle(.linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .scaleEffect(isDragging ? 1.1 : 1.0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isDragging)
+                    if let tool = selectedTool, tool != .all {
+                        Image(systemName: isDragging ? "arrow.down.circle.fill" : tool.icon)
+                            .font(.system(size: 56))
+                            .foregroundStyle(isDragging ? .linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing) : tool.gradient)
+                            .scaleEffect(isDragging ? 1.1 : 1.0)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isDragging)
 
-                    Text(isDragging ? "Drop Files Here!" : "Choose Your Tool")
-                        .font(.system(size: 32, weight: .bold))
+                        Text(isDragging ? "Drop \(tool.rawValue) Files Here!" : tool.rawValue)
+                            .font(.system(size: 32, weight: .bold))
 
-                    Text("Convert files locally without uploading to the cloud")
-                        .font(.system(size: 15))
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
+                        Text(tool.description)
+                            .font(.system(size: 15))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        Image(systemName: isDragging ? "arrow.down.circle.fill" : "sparkles")
+                            .font(.system(size: 56))
+                            .foregroundStyle(.linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .scaleEffect(isDragging ? 1.1 : 1.0)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isDragging)
+
+                        Text(isDragging ? "Drop Files Here!" : "Choose Your Tool")
+                            .font(.system(size: 32, weight: .bold))
+
+                        Text("Convert files locally without uploading to the cloud")
+                            .font(.system(size: 15))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .padding(.top, 40)
 
@@ -287,10 +327,31 @@ struct DashboardView: View {
 
                     QuickActionButton(
                         icon: "link.badge.plus",
-                        title: "Paste URL",
+                        title: "Video Downloader",
                         color: .purple
                     ) {
-                        showingURLInput = true
+                        VideoURLPrompt.show { url in
+                            if let url = url {
+                                Task { @MainActor in
+                                    withAnimation {
+                                        loadingMessage = "Fetching video info..."
+                                        showingLoadingOverlay = true
+                                    }
+
+                                    let startTime = Date()
+                                    await conversionManager.addVideoURL(url)
+                                    let elapsed = Date().timeIntervalSince(startTime)
+                                    let minimumDisplayTime = 0.5
+                                    if elapsed < minimumDisplayTime {
+                                        try? await Task.sleep(nanoseconds: UInt64((minimumDisplayTime - elapsed) * 1_000_000_000))
+                                    }
+
+                                    withAnimation {
+                                        showingLoadingOverlay = false
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, 40)
@@ -300,13 +361,15 @@ struct DashboardView: View {
                     GridItem(.flexible(), spacing: 20),
                     GridItem(.flexible(), spacing: 20)
                 ], spacing: 20) {
-                    ForEach(ToolCategory.allCases) { category in
+                    ForEach(ToolCategory.allCases.filter { $0 != .settings }) { category in
                         ToolCategoryCard(category: category)
                             .onTapGesture {
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                                     selectedTool = category
                                 }
-                                showingFilePicker = true
+                                if category != .settings {
+                                    showingFilePicker = true
+                                }
                             }
                     }
                 }
@@ -418,24 +481,83 @@ struct WorkspaceView: View {
     @Binding var isDragging: Bool
     @Binding var showingFilePicker: Bool
     @Binding var showingURLInput: Bool
+    var selectedTool: ToolCategory?
+    @Binding var showingLoadingOverlay: Bool
+    @Binding var loadingMessage: String
+
+    var filteredFiles: [ConversionFile] {
+        guard let tool = selectedTool, tool != .all else {
+            return conversionManager.files
+        }
+
+        return conversionManager.files.filter { file in
+            switch tool {
+            case .image: return file.fileType == .image
+            case .video: return file.fileType == .video
+            case .audio: return file.fileType == .audio
+            case .document: return file.fileType == .document
+            case .archive: return file.fileType == .archive
+            default: return true
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             // Toolbar
             HStack {
+                // Tool Category Indicator
+                if let tool = selectedTool, tool != .all {
+                    HStack(spacing: 8) {
+                        Image(systemName: tool.icon)
+                            .foregroundStyle(tool.gradient)
+                        Text(tool.rawValue)
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.accentColor.opacity(0.1))
+                    )
+                }
+
+                Spacer()
+
                 Button(action: { showingFilePicker = true }) {
                     Label("Add Files", systemImage: "plus.circle.fill")
                         .font(.system(size: 14, weight: .medium))
                 }
                 .buttonStyle(.bordered)
 
-                Button(action: { showingURLInput = true }) {
+                Button(action: {
+                    VideoURLPrompt.show { url in
+                        if let url = url {
+                            Task { @MainActor in
+                                withAnimation {
+                                    loadingMessage = "Fetching video info..."
+                                    showingLoadingOverlay = true
+                                }
+
+                                let startTime = Date()
+                                await conversionManager.addVideoURL(url)
+                                let elapsed = Date().timeIntervalSince(startTime)
+                                let minimumDisplayTime = 0.5
+                                if elapsed < minimumDisplayTime {
+                                    try? await Task.sleep(nanoseconds: UInt64((minimumDisplayTime - elapsed) * 1_000_000_000))
+                                }
+
+                                withAnimation {
+                                    showingLoadingOverlay = false
+                                }
+                            }
+                        }
+                    }
+                }) {
                     Label("Add URL", systemImage: "link")
                         .font(.system(size: 14, weight: .medium))
                 }
                 .buttonStyle(.bordered)
-
-                Spacer()
 
                 Button(action: { conversionManager.clearAll() }) {
                     Label("Clear All", systemImage: "trash")
@@ -449,23 +571,46 @@ struct WorkspaceView: View {
 
             // File List
             ScrollView {
-                LazyVStack(spacing: 16) {
-                    ForEach(conversionManager.files) { file in
-                        EnhancedFileRowView(file: file, conversionManager: conversionManager)
-                            .transition(.asymmetric(
-                                insertion: .scale.combined(with: .opacity),
-                                removal: .opacity
-                            ))
+                if filteredFiles.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: selectedTool?.icon ?? "doc.on.doc")
+                            .font(.system(size: 48))
+                            .foregroundStyle(selectedTool?.gradient ?? .linearGradient(colors: [.gray], startPoint: .top, endPoint: .bottom))
+                            .padding(.top, 60)
+
+                        Text("No \(selectedTool?.rawValue.lowercased() ?? "files") found")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.secondary)
+
+                        Text("Add files or switch to a different category")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    LazyVStack(spacing: 16) {
+                        ForEach(filteredFiles) { file in
+                            EnhancedFileRowView(file: file, conversionManager: conversionManager)
+                                .transition(.asymmetric(
+                                    insertion: .scale.combined(with: .opacity),
+                                    removal: .opacity
+                                ))
+                        }
+                    }
+                    .padding(20)
                 }
-                .padding(20)
             }
 
             // Footer Actions
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(conversionManager.files.count) files")
-                        .font(.system(size: 16, weight: .semibold))
+                    if selectedTool == nil || selectedTool == .all {
+                        Text("\(conversionManager.files.count) files")
+                            .font(.system(size: 16, weight: .semibold))
+                    } else {
+                        Text("\(filteredFiles.count) of \(conversionManager.files.count) files")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
                     Text("Ready to convert")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
@@ -478,7 +623,7 @@ struct WorkspaceView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .disabled(conversionManager.isConverting)
+                .disabled(conversionManager.isConverting || filteredFiles.isEmpty)
             }
             .padding(20)
             .background(
@@ -591,8 +736,10 @@ struct EnhancedFileRowView: View {
                         Text(error)
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .frame(maxWidth: 150)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 250)
+                            .help(error)
                     }
                 }
             }
@@ -655,19 +802,20 @@ struct URLInputSheet: View {
     @ObservedObject var conversionManager: ConversionManager
     @Binding var isPresented: Bool
     @State private var isLoading = false
+    @State private var localURL: String = ""
 
     var body: some View {
         VStack(spacing: 24) {
             // Header
             HStack {
-                Image(systemName: "link.circle.fill")
+                Image(systemName: "arrow.down.circle.fill")
                     .font(.system(size: 32))
                     .foregroundStyle(.linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Download from URL")
+                    Text("Video Downloader")
                         .font(.system(size: 20, weight: .bold))
-                    Text("Paste a video URL from YouTube, Instagram, TikTok, etc.")
+                    Text("Download videos from popular social platforms")
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
                 }
@@ -677,9 +825,15 @@ struct URLInputSheet: View {
 
             // URL Input
             VStack(alignment: .leading, spacing: 8) {
-                TextField("https://www.youtube.com/watch?v=...", text: $videoURL)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 14))
+                Text("Video URL")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+
+                MacOSTextField(text: $localURL, placeholder: "https://www.youtube.com/watch?v=...")
+                    .frame(height: 32)
+                    .onAppear {
+                        print("TextField appeared in sheet")
+                    }
 
                 Text("Supported: YouTube, Instagram, TikTok, Twitter, Facebook, Vimeo, and more")
                     .font(.system(size: 11))
@@ -690,6 +844,7 @@ struct URLInputSheet: View {
             HStack {
                 Button("Cancel") {
                     isPresented = false
+                    localURL = ""
                     videoURL = ""
                 }
                 .keyboardShortcut(.cancelAction)
@@ -699,14 +854,15 @@ struct URLInputSheet: View {
                 Button("Download") {
                     Task {
                         isLoading = true
-                        await conversionManager.addVideoURL(videoURL)
+                        await conversionManager.addVideoURL(localURL)
                         isLoading = false
                         isPresented = false
-                        videoURL = ""
+                        videoURL = localURL
+                        localURL = ""
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(videoURL.isEmpty || isLoading)
+                .disabled(localURL.isEmpty || isLoading)
                 .keyboardShortcut(.defaultAction)
 
                 if isLoading {
@@ -717,6 +873,226 @@ struct URLInputSheet: View {
         }
         .padding(24)
         .frame(width: 500)
+        .fixedSize(horizontal: false, vertical: true)
+        .onAppear {
+            localURL = videoURL
+            print("URL Input Sheet appeared")
+            print("Initial URL value: '\(localURL)'")
+        }
+    }
+}
+
+// MARK: - macOS NSTextField Wrapper
+struct MacOSTextField: NSViewRepresentable {
+    @Binding var text: String
+    var placeholder: String = ""
+
+    class CustomTextField: NSTextField {
+        override var acceptsFirstResponder: Bool { true }
+        override var canBecomeKeyView: Bool { true }
+
+        override func becomeFirstResponder() -> Bool {
+            let result = super.becomeFirstResponder()
+            print("TextField becomeFirstResponder: \(result)")
+            return result
+        }
+    }
+
+    func makeNSView(context: Context) -> CustomTextField {
+        let textField = CustomTextField()
+        textField.placeholderString = placeholder
+        textField.delegate = context.coordinator
+        textField.isBordered = true
+        textField.bezelStyle = .roundedBezel
+        textField.font = NSFont.systemFont(ofSize: 14)
+        textField.isEditable = true
+        textField.isSelectable = true
+        textField.refusesFirstResponder = false
+        textField.allowsEditingTextAttributes = false
+
+        print("Creating NSTextField - editable: \(textField.isEditable), selectable: \(textField.isSelectable)")
+
+        // Try to make it first responder immediately
+        DispatchQueue.main.async {
+            if let window = textField.window {
+                print("Window found, making textField first responder")
+                window.makeFirstResponder(textField)
+            } else {
+                print("No window yet")
+            }
+        }
+
+        return textField
+    }
+
+    func updateNSView(_ nsView: CustomTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+
+        // Ensure it's editable and try to grab focus
+        nsView.isEditable = true
+        nsView.isSelectable = true
+
+        // Try making it first responder on update too
+        if !context.coordinator.didBecomeFirstResponder {
+            DispatchQueue.main.async {
+                if let window = nsView.window {
+                    let success = window.makeFirstResponder(nsView)
+                    print("makeFirstResponder result: \(success)")
+                    context.coordinator.didBecomeFirstResponder = success
+                }
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: MacOSTextField
+        var didBecomeFirstResponder = false
+
+        init(_ parent: MacOSTextField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let textField = obj.object as? NSTextField else { return }
+            print("Text changed to: '\(textField.stringValue)'")
+            parent.text = textField.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            print("Command: \(commandSelector)")
+            return false
+        }
+    }
+}
+
+// MARK: - Settings View
+struct SettingsView: View {
+    @StateObject private var settings = UserSettings.shared
+    @State private var showingFolderPicker = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 32) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.linearGradient(colors: [.gray, .secondary], startPoint: .topLeading, endPoint: .bottomTrailing))
+
+                        Text("Settings")
+                            .font(.system(size: 32, weight: .bold))
+                    }
+                    Text("Configure your file converter preferences")
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 40)
+
+                Divider()
+
+                // Output Directory Setting
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Output Directory")
+                        .font(.system(size: 20, weight: .semibold))
+
+                    Text("Choose where converted files will be saved. If not set, files will be saved to a temporary folder.")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Current Location:")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.secondary)
+
+                            Text(settings.outputDirectoryDisplayName)
+                                .font(.system(size: 14))
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color(NSColor.controlBackgroundColor))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 1)
+                                )
+                        }
+
+                        VStack(spacing: 8) {
+                            Button(action: {
+                                showingFolderPicker = true
+                            }) {
+                                Label("Choose Folder", systemImage: "folder.badge.plus")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            if settings.outputDirectory != nil {
+                                Button(action: {
+                                    settings.clearOutputDirectory()
+                                }) {
+                                    Label("Reset to Default", systemImage: "arrow.counterclockwise")
+                                        .font(.system(size: 14, weight: .medium))
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
+                // About Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("About")
+                        .font(.system(size: 20, weight: .semibold))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Version:")
+                                .foregroundColor(.secondary)
+                            Text("1.0.0")
+                        }
+                        .font(.system(size: 14))
+
+                        HStack {
+                            Text("Privacy:")
+                                .foregroundColor(.secondary)
+                            Text("All conversions happen locally on your device")
+                        }
+                        .font(.system(size: 14))
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 40)
+            .padding(.bottom, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(NSColor.windowBackgroundColor))
+        .fileImporter(
+            isPresented: $showingFolderPicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            do {
+                let url = try result.get().first
+                if let url = url {
+                    settings.setOutputDirectory(url)
+                }
+            } catch {
+                print("Failed to select folder: \(error)")
+            }
+        }
     }
 }
 
