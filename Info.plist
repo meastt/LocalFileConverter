@@ -12,6 +12,8 @@
     <string>6.0</string>
     <key>CFBundleName</key>
     <string>Local File Converter</string>
+    <key>CFBundleDisplayName</key>
+    <string>File Converter</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -20,8 +22,16 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2024. All rights reserved.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>File Converter needs access to your Desktop folder to convert files you select.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>File Converter needs access to your Documents folder to convert files you select.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>File Converter saves converted files to your Downloads folder for easy access.</string>
     <key>NSSupportsAutomaticTermination</key>
     <true/>
     <key>NSSupportsSuddenTermination</key>
