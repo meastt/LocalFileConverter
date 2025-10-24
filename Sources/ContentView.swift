@@ -8,6 +8,8 @@ struct ContentView: View {
     @State private var showingFilePicker = false
     @State private var showingURLInput = false
     @State private var videoURL = ""
+    @State private var showingMissingToolsAlert = false
+    @State private var missingTools: [String] = []
 
     var body: some View {
         NavigationSplitView {
@@ -59,6 +61,15 @@ struct ContentView: View {
         } message: {
             Text(conversionManager.alertMessage)
         }
+        .alert("Missing Required Tools", isPresented: $showingMissingToolsAlert) {
+            Button("Copy Install Command", action: copyInstallCommand)
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(missingToolsMessage)
+        }
+        .onAppear {
+            checkForMissingTools()
+        }
     }
 
     private func handleDrop(providers: [NSItemProvider]) {
@@ -85,6 +96,39 @@ struct ContentView: View {
         } catch {
             print("File import error: \(error)")
         }
+    }
+
+    private func checkForMissingTools() {
+        let requiredTools = ["ffmpeg", "magick", "pandoc", "7z", "yt-dlp"]
+        let checker = CommandLineConverter()
+
+        missingTools = requiredTools.filter { !checker.checkToolAvailability($0) }
+
+        if !missingTools.isEmpty {
+            // Show alert after a short delay to avoid showing immediately on launch
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                showingMissingToolsAlert = true
+            }
+        }
+    }
+
+    private var missingToolsMessage: String {
+        let toolsList = missingTools.map { "• \($0)" }.joined(separator: "\n")
+        return """
+        The following tools are missing and required for full functionality:
+
+        \(toolsList)
+
+        Click "Copy Install Command" to copy the Homebrew installation command to your clipboard, then paste it into Terminal.
+        """
+    }
+
+    private func copyInstallCommand() {
+        let command = "brew install " + missingTools.joined(separator: " ")
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        #endif
     }
 }
 
