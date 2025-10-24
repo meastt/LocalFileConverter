@@ -94,6 +94,7 @@ class ArchiveConverter: CommandLineConverter, FileConverter {
             _ = try await runCommand(
                 "/usr/bin/zip",
                 arguments: ["-r", "-q", outputURL.path, "."],
+                workingDirectory: sourceDir,
                 progressHandler: { progress in progressHandler(0.5 + progress * 0.5) }
             )
         case "7z":
