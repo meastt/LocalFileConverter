@@ -477,12 +477,14 @@ struct WorkspaceView: View {
                         .font(.system(size: 14, weight: .medium))
                 }
                 .buttonStyle(.bordered)
+                .keyboardShortcut("o", modifiers: .command)
 
                 Button(action: { showingURLInput = true }) {
                     Label("Add URL", systemImage: "link")
                         .font(.system(size: 14, weight: .medium))
                 }
                 .buttonStyle(.bordered)
+                .keyboardShortcut("u", modifiers: .command)
 
                 Spacer()
 
@@ -492,6 +494,7 @@ struct WorkspaceView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(.red)
+                .keyboardShortcut("k", modifiers: .command)
             }
             .padding()
             .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
@@ -505,6 +508,9 @@ struct WorkspaceView: View {
                                 insertion: .scale.combined(with: .opacity),
                                 removal: .opacity
                             ))
+                    }
+                    .onMove { from, to in
+                        conversionManager.moveFiles(from: from, to: to)
                     }
                 }
                 .padding(20)
@@ -528,6 +534,7 @@ struct WorkspaceView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(conversionManager.isConverting)
+                .keyboardShortcut(.return, modifiers: .command)
             }
             .padding(20)
             .background(

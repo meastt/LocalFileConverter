@@ -83,6 +83,10 @@ class ConversionManager: ObservableObject {
         files.removeAll()
     }
 
+    func moveFiles(from source: IndexSet, to destination: Int) {
+        files.move(fromOffsets: source, toOffset: destination)
+    }
+
     func setTargetFormat(for fileId: UUID, format: String) {
         if let index = files.firstIndex(where: { $0.id == fileId }) {
             files[index].targetFormat = format
