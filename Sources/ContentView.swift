@@ -8,6 +8,8 @@ struct ContentView: View {
     @State private var showingFilePicker = false
     @State private var showingURLInput = false
     @State private var videoURL = ""
+    @State private var showingMissingToolsAlert = false
+    @State private var missingTools: [String] = []
 
     var body: some View {
         NavigationSplitView {
@@ -54,6 +56,20 @@ struct ContentView: View {
         .sheet(isPresented: $showingURLInput) {
             URLInputSheet(videoURL: $videoURL, conversionManager: conversionManager, isPresented: $showingURLInput)
         }
+        .alert(conversionManager.alertTitle, isPresented: $conversionManager.showingAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(conversionManager.alertMessage)
+        }
+        .alert("Missing Required Tools", isPresented: $showingMissingToolsAlert) {
+            Button("Copy Install Command", action: copyInstallCommand)
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(missingToolsMessage)
+        }
+        .onAppear {
+            checkForMissingTools()
+        }
     }
 
     private func handleDrop(providers: [NSItemProvider]) {
@@ -80,6 +96,39 @@ struct ContentView: View {
         } catch {
             print("File import error: \(error)")
         }
+    }
+
+    private func checkForMissingTools() {
+        let requiredTools = ["ffmpeg", "magick", "pandoc", "7z", "yt-dlp"]
+        let checker = CommandLineConverter()
+
+        missingTools = requiredTools.filter { !checker.checkToolAvailability($0) }
+
+        if !missingTools.isEmpty {
+            // Show alert after a short delay to avoid showing immediately on launch
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                showingMissingToolsAlert = true
+            }
+        }
+    }
+
+    private var missingToolsMessage: String {
+        let toolsList = missingTools.map { "• \($0)" }.joined(separator: "\n")
+        return """
+        The following tools are missing and required for full functionality:
+
+        \(toolsList)
+
+        Click "Copy Install Command" to copy the Homebrew installation command to your clipboard, then paste it into Terminal.
+        """
+    }
+
+    private func copyInstallCommand() {
+        let command = "brew install " + missingTools.joined(separator: " ")
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        #endif
     }
 }
 
@@ -229,6 +278,7 @@ struct SidebarItem: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(isSelected ? category.gradient : .linearGradient(colors: [.secondary], startPoint: .top, endPoint: .bottom))
                 .frame(width: 24)
+                .accessibilityHidden(true)
 
             Text(category.rawValue)
                 .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
@@ -243,6 +293,10 @@ struct SidebarItem: View {
                 .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
         )
         .padding(.horizontal, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(category.rawValue)
+        .accessibilityHint("Select \(category.rawValue) conversion tool. \(category.description)")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
     }
 }
 
@@ -364,6 +418,8 @@ struct QuickActionButton: View {
         .onHover { hovering in
             isHovered = hovering
         }
+        .accessibilityLabel(title)
+        .accessibilityHint("Opens \(title.lowercased()) dialog")
     }
 }
 
@@ -409,6 +465,10 @@ struct ToolCategoryCard: View {
         .onHover { hovering in
             isHovered = hovering
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(category.rawValue) converter")
+        .accessibilityHint("Select to convert \(category.description)")
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -428,12 +488,18 @@ struct WorkspaceView: View {
                         .font(.system(size: 14, weight: .medium))
                 }
                 .buttonStyle(.bordered)
+                .keyboardShortcut("o", modifiers: .command)
+                .accessibilityLabel("Add Files")
+                .accessibilityHint("Browse and select files to convert. Shortcut: Command O")
 
                 Button(action: { showingURLInput = true }) {
                     Label("Add URL", systemImage: "link")
                         .font(.system(size: 14, weight: .medium))
                 }
                 .buttonStyle(.bordered)
+                .keyboardShortcut("u", modifiers: .command)
+                .accessibilityLabel("Add URL")
+                .accessibilityHint("Download video from URL. Shortcut: Command U")
 
                 Spacer()
 
@@ -443,6 +509,9 @@ struct WorkspaceView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(.red)
+                .keyboardShortcut("k", modifiers: .command)
+                .accessibilityLabel("Clear All")
+                .accessibilityHint("Remove all files from the list. Shortcut: Command K")
             }
             .padding()
             .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
@@ -456,6 +525,9 @@ struct WorkspaceView: View {
                                 insertion: .scale.combined(with: .opacity),
                                 removal: .opacity
                             ))
+                    }
+                    .onMove { from, to in
+                        conversionManager.moveFiles(from: from, to: to)
                     }
                 }
                 .padding(20)
@@ -479,6 +551,10 @@ struct WorkspaceView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(conversionManager.isConverting)
+                .keyboardShortcut(.return, modifiers: .command)
+                .accessibilityLabel(conversionManager.isConverting ? "Converting files" : "Convert all files")
+                .accessibilityHint("Start converting all files in the list. Shortcut: Command Return")
+                .accessibilityValue(conversionManager.isConverting ? "In progress" : "Ready")
             }
             .padding(20)
             .background(
@@ -514,6 +590,7 @@ struct EnhancedFileRowView: View {
                     .font(.system(size: 24, weight: .medium))
                     .foregroundColor(.white)
             }
+            .accessibilityHidden(true)
 
             // File Info
             VStack(alignment: .leading, spacing: 6) {
@@ -557,6 +634,8 @@ struct EnhancedFileRowView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Output format: \(file.targetFormat?.uppercased() ?? "not selected")")
+                .accessibilityHint("Select output format for conversion")
             }
 
             // Progress or Result Actions
@@ -566,9 +645,12 @@ struct EnhancedFileRowView: View {
                     VStack(spacing: 6) {
                         ProgressView(value: progress)
                             .frame(width: 120)
+                            .accessibilityLabel("Conversion progress")
+                            .accessibilityValue("\(Int(progress * 100)) percent complete")
                         Text("\(Int(progress * 100))%")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.secondary)
+                            .accessibilityHidden(true)
                     }
 
                 case .completed:
@@ -582,6 +664,8 @@ struct EnhancedFileRowView: View {
                                 .font(.system(size: 13, weight: .medium))
                         }
                         .buttonStyle(.bordered)
+                        .accessibilityLabel("Show in Finder")
+                        .accessibilityHint("Opens Finder and selects the converted file")
                     }
 
                 case .failed(let error):
@@ -593,6 +677,13 @@ struct EnhancedFileRowView: View {
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                             .frame(maxWidth: 150)
+
+                        Button("Retry") {
+                            conversionManager.retryFile(id: file.id)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Retry conversion")
+                        .accessibilityHint("Attempts to convert the file again")
                     }
                 }
             }
@@ -609,6 +700,8 @@ struct EnhancedFileRowView: View {
                     .opacity(isHovered ? 1 : 0.3)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Remove file")
+            .accessibilityHint("Remove \(file.url.lastPathComponent) from the conversion list")
         }
         .padding(16)
         .background(

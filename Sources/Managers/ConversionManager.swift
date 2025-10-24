@@ -5,9 +5,15 @@ import Combine
 class ConversionManager: ObservableObject {
     @Published var files: [ConversionFile] = []
     @Published var isConverting = false
+    @Published var showingAlert = false
+    @Published var alertTitle = ""
+    @Published var alertMessage = ""
 
     private var converters: [FileType: any FileConverter] = [:]
     private let videoDownloader = VideoDownloader()
+
+    // Maximum file size: 5GB
+    private let maxFileSize: Int64 = 5_000_000_000
 
     init() {
         setupConverters()
@@ -24,8 +30,24 @@ class ConversionManager: ObservableObject {
     func addFile(url: URL) {
         let fileType = FileType.detect(from: url)
         guard fileType != .unknown else {
-            print("Unsupported file type: \(url.lastPathComponent)")
+            alertTitle = "Unsupported File Type"
+            alertMessage = "The file '\(url.lastPathComponent)' is not a supported format."
+            showingAlert = true
             return
+        }
+
+        // Check file size (skip for remote URLs)
+        if url.scheme != "http" && url.scheme != "https" {
+            if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+               let size = attributes[.size] as? Int64 {
+                if size > maxFileSize {
+                    let sizeInGB = Double(size) / 1_000_000_000.0
+                    alertTitle = "File Too Large"
+                    alertMessage = "The file '\(url.lastPathComponent)' is \(String(format: "%.1f", sizeInGB))GB. Files larger than 5GB are not supported to prevent system issues."
+                    showingAlert = true
+                    return
+                }
+            }
         }
 
         var file = ConversionFile(url: url, fileType: fileType)
@@ -61,6 +83,10 @@ class ConversionManager: ObservableObject {
         files.removeAll()
     }
 
+    func moveFiles(from source: IndexSet, to destination: Int) {
+        files.move(fromOffsets: source, toOffset: destination)
+    }
+
     func setTargetFormat(for fileId: UUID, format: String) {
         if let index = files.firstIndex(where: { $0.id == fileId }) {
             files[index].targetFormat = format
@@ -79,17 +105,32 @@ class ConversionManager: ObservableObject {
         }
     }
 
+    func retryFile(id: UUID) {
+        guard let index = files.firstIndex(where: { $0.id == id }) else { return }
+        // Reset status to nil and convert
+        files[index].status = nil
+        Task {
+            await convertFile(at: index)
+        }
+    }
+
     func convertAll() {
         Task {
             isConverting = true
             defer { isConverting = false }
 
-            for i in files.indices {
-                guard files[i].status == nil || files[i].status?.isFailed == true else {
-                    continue
-                }
+            // Collect indices of files that need conversion
+            let indicesToConvert = files.indices.filter { i in
+                files[i].status == nil || files[i].status?.isFailed == true
+            }
 
-                await convertFile(at: i)
+            // Convert files in parallel using TaskGroup
+            await withTaskGroup(of: Void.self) { group in
+                for i in indicesToConvert {
+                    group.addTask {
+                        await self.convertFile(at: i)
+                    }
+                }
             }
         }
     }
@@ -101,6 +142,9 @@ class ConversionManager: ObservableObject {
         guard let targetFormat = file.targetFormat else { return }
 
         files[index].status = .converting(progress: 0.0)
+
+        // Track downloaded file for cleanup
+        var downloadedFileToCleanup: URL?
 
         // Handle video URLs (download first)
         if file.url.scheme == "http" || file.url.scheme == "https" {
@@ -116,6 +160,7 @@ class ConversionManager: ObservableObject {
                     }
                 )
                 files[index].url = downloadedURL
+                downloadedFileToCleanup = downloadedURL
             } catch {
                 files[index].status = .failed(error: error.localizedDescription)
                 return
@@ -182,6 +227,11 @@ class ConversionManager: ObservableObject {
 
         } catch {
             files[index].status = .failed(error: error.localizedDescription)
+        }
+
+        // Clean up downloaded file after conversion (success or failure)
+        if let downloadedFile = downloadedFileToCleanup {
+            try? FileManager.default.removeItem(at: downloadedFile)
         }
     }
 }
