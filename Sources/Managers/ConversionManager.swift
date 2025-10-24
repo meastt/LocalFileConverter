@@ -115,12 +115,18 @@ class ConversionManager: ObservableObject {
             isConverting = true
             defer { isConverting = false }
 
-            for i in files.indices {
-                guard files[i].status == nil || files[i].status?.isFailed == true else {
-                    continue
-                }
+            // Collect indices of files that need conversion
+            let indicesToConvert = files.indices.filter { i in
+                files[i].status == nil || files[i].status?.isFailed == true
+            }
 
-                await convertFile(at: i)
+            // Convert files in parallel using TaskGroup
+            await withTaskGroup(of: Void.self) { group in
+                for i in indicesToConvert {
+                    group.addTask {
+                        await self.convertFile(at: i)
+                    }
+                }
             }
         }
     }

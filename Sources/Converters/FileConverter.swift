@@ -131,8 +131,10 @@ class CommandLineConverter {
     }
 
     func generateOutputURL(for inputURL: URL, targetFormat: String) -> URL {
-        let outputDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LocalFileConverter", isDirectory: true)
+        // Use Downloads folder by default, with subfolder for organization
+        let outputDirectory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Converted Files", isDirectory: true)
+            ?? FileManager.default.temporaryDirectory.appendingPathComponent("LocalFileConverter", isDirectory: true)
 
         try? FileManager.default.createDirectory(
             at: outputDirectory,
