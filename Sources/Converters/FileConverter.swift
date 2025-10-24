@@ -32,6 +32,7 @@ class CommandLineConverter {
     func runCommand(
         _ command: String,
         arguments: [String],
+        workingDirectory: URL? = nil,
         progressHandler: @escaping (Double) -> Void
     ) async throws -> String {
         let process = Process()
@@ -42,6 +43,11 @@ class CommandLineConverter {
         process.arguments = arguments
         process.standardOutput = outputPipe
         process.standardError = errorPipe
+
+        // Set working directory if specified
+        if let workingDirectory = workingDirectory {
+            process.currentDirectoryURL = workingDirectory
+        }
 
         // Use NSLock for thread-safe data collection
         let outputLock = NSLock()
@@ -75,9 +81,22 @@ class CommandLineConverter {
             do {
                 try process.run()
 
+                // Simulate progress updates using Task-based timing (no memory leaks)
+                let progressTask = Task {
+                    var progress: Double = 0.0
+                    while progress < 0.9 && process.isRunning {
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+                        progress += 0.05
+                        await MainActor.run {
+                            progressHandler(progress)
+                        }
+                    }
+                }
+
                 // Wait for process in background
                 DispatchQueue.global(qos: .userInitiated).async {
                     process.waitUntilExit()
+                    progressTask.cancel()
 
                     // Give a moment for final data to be read
                     Thread.sleep(forTimeInterval: 0.2)
@@ -161,8 +180,10 @@ class CommandLineConverter {
         if let customDir = customOutputDirectory {
             outputDirectory = customDir
         } else {
-            outputDirectory = FileManager.default.temporaryDirectory
-                .appendingPathComponent("LocalFileConverter", isDirectory: true)
+            // Use Downloads folder by default, with subfolder for organization
+            outputDirectory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?
+                .appendingPathComponent("Converted Files", isDirectory: true)
+                ?? FileManager.default.temporaryDirectory.appendingPathComponent("LocalFileConverter", isDirectory: true)
         }
 
         try? FileManager.default.createDirectory(

@@ -16,6 +16,11 @@ struct ConversionFile: Identifiable {
     }
 
     var fileSize: String {
+        // Check if it's a remote URL
+        if url.scheme == "http" || url.scheme == "https" {
+            return "Remote file"
+        }
+
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = attributes[.size] as? Int64 else {
             return "Unknown size"
