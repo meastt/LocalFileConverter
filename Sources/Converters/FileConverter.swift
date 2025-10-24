@@ -49,42 +49,86 @@ class CommandLineConverter {
             process.currentDirectoryURL = workingDirectory
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            Task {
-                do {
-                    try process.run()
+        // Use NSLock for thread-safe data collection
+        let outputLock = NSLock()
+        let errorLock = NSLock()
+        var outputData = Data()
+        var errorData = Data()
 
-                    // Simulate progress updates using Task-based timing (no memory leaks)
-                    let progressTask = Task {
-                        var progress: Double = 0.0
-                        while progress < 0.9 && process.isRunning {
-                            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
-                            progress += 0.05
-                            await MainActor.run {
-                                progressHandler(progress)
-                            }
+        let outputHandle = outputPipe.fileHandleForReading
+        let errorHandle = errorPipe.fileHandleForReading
+
+        // Set up background reading
+        outputHandle.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.count > 0 {
+                outputLock.lock()
+                outputData.append(data)
+                outputLock.unlock()
+            }
+        }
+
+        errorHandle.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.count > 0 {
+                errorLock.lock()
+                errorData.append(data)
+                errorLock.unlock()
+            }
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            do {
+                try process.run()
+
+                // Simulate progress updates using Task-based timing (no memory leaks)
+                let progressTask = Task {
+                    var progress: Double = 0.0
+                    while progress < 0.9 && process.isRunning {
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+                        progress += 0.05
+                        await MainActor.run {
+                            progressHandler(progress)
                         }
                     }
+                }
 
+                // Wait for process in background
+                DispatchQueue.global(qos: .userInitiated).async {
                     process.waitUntilExit()
                     progressTask.cancel()
 
-                    let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                    // Give a moment for final data to be read
+                    Thread.sleep(forTimeInterval: 0.2)
 
-                    if process.terminationStatus == 0 {
-                        await MainActor.run {
-                            progressHandler(1.0)
+                    // Stop reading
+                    outputHandle.readabilityHandler = nil
+                    errorHandle.readabilityHandler = nil
+
+                    let status = process.terminationStatus
+
+                    outputLock.lock()
+                    let finalOutput = outputData
+                    outputLock.unlock()
+
+                    errorLock.lock()
+                    let finalError = errorData
+                    errorLock.unlock()
+
+                    DispatchQueue.main.async {
+                        progressHandler(1.0)
+
+                        if status == 0 {
+                            let output = String(data: finalOutput, encoding: .utf8) ?? ""
+                            continuation.resume(returning: output)
+                        } else {
+                            let error = String(data: finalError, encoding: .utf8) ?? "Unknown error"
+                            continuation.resume(throwing: ConversionError.conversionFailed(error))
                         }
-                        let output = String(data: outputData, encoding: .utf8) ?? ""
-                        continuation.resume(returning: output)
-                    } else {
-                        let error = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-                        continuation.resume(throwing: ConversionError.conversionFailed(error))
                     }
-                } catch {
-                    continuation.resume(throwing: error)
                 }
+            } catch {
+                continuation.resume(throwing: error)
             }
         }
     }
@@ -130,11 +174,17 @@ class CommandLineConverter {
         return nil
     }
 
-    func generateOutputURL(for inputURL: URL, targetFormat: String) -> URL {
-        // Use Downloads folder by default, with subfolder for organization
-        let outputDirectory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("Converted Files", isDirectory: true)
-            ?? FileManager.default.temporaryDirectory.appendingPathComponent("LocalFileConverter", isDirectory: true)
+    func generateOutputURL(for inputURL: URL, targetFormat: String, customOutputDirectory: URL? = nil) -> URL {
+        let outputDirectory: URL
+
+        if let customDir = customOutputDirectory {
+            outputDirectory = customDir
+        } else {
+            // Use Downloads folder by default, with subfolder for organization
+            outputDirectory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?
+                .appendingPathComponent("Converted Files", isDirectory: true)
+                ?? FileManager.default.temporaryDirectory.appendingPathComponent("LocalFileConverter", isDirectory: true)
+        }
 
         try? FileManager.default.createDirectory(
             at: outputDirectory,

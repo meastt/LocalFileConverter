@@ -85,7 +85,7 @@ class ArchiveConverter: CommandLineConverter, FileConverter {
         baseName: String,
         progressHandler: @escaping (Double) -> Void
     ) async throws -> URL {
-        let outputURL = generateOutputURL(for: sourceDir, targetFormat: targetFormat)
+        let outputURL = generateOutputURL(for: sourceDir, targetFormat: targetFormat, customOutputDirectory: UserSettings.shared.outputDirectory)
             .deletingLastPathComponent()
             .appendingPathComponent("\(baseName)_converted.\(targetFormat)")
 

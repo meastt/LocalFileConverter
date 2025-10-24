@@ -38,7 +38,7 @@ class DocumentConverter: CommandLineConverter, FileConverter {
         targetFormat: String,
         progressHandler: @escaping (Double) -> Void
     ) async throws -> URL {
-        let outputURL = generateOutputURL(for: inputURL, targetFormat: targetFormat)
+        let outputURL = generateOutputURL(for: inputURL, targetFormat: targetFormat, customOutputDirectory: UserSettings.shared.outputDirectory)
 
         var arguments = [
             inputURL.path,
@@ -77,7 +77,7 @@ class DocumentConverter: CommandLineConverter, FileConverter {
         inputURL: URL,
         progressHandler: @escaping (Double) -> Void
     ) async throws -> URL {
-        let outputURL = generateOutputURL(for: inputURL, targetFormat: "pdf")
+        let outputURL = generateOutputURL(for: inputURL, targetFormat: "pdf", customOutputDirectory: UserSettings.shared.outputDirectory)
 
         let arguments = [
             inputURL.path,

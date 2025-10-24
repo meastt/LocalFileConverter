@@ -57,12 +57,12 @@ class ConversionManager: ObservableObject {
     
     func addVideoURL(_ urlString: String) async {
         guard VideoDownloader.isValidVideoURL(urlString) else {
-            print("Invalid video URL: \(urlString)")
             return
         }
-        
+
         do {
             let videoInfo = try await videoDownloader.getVideoInfo(from: urlString)
+
             var tempFile = ConversionFile(
                 url: URL(string: urlString)!,
                 fileType: .video,
@@ -71,7 +71,7 @@ class ConversionManager: ObservableObject {
             tempFile.targetFormat = "mp4"
             files.append(tempFile)
         } catch {
-            print("Failed to get video info: \(error)")
+            print("Failed to get video info: \(error.localizedDescription)")
         }
     }
 
@@ -154,11 +154,29 @@ class ConversionManager: ObservableObject {
                     progressHandler: { [weak self] progress in
                         Task { @MainActor in
                             if let self = self, index < self.files.count {
-                                self.files[index].status = .converting(progress: progress * 0.5)
+                                self.files[index].status = .converting(progress: progress)
                             }
                         }
                     }
                 )
+
+                // Check if already in target format
+                let downloadedFormat = downloadedURL.pathExtension.lowercased()
+                if downloadedFormat == targetFormat.lowercased() {
+                    // Move to user's output directory if set
+                    let finalURL: URL
+                    if let outputDir = UserSettings.shared.outputDirectory {
+                        finalURL = outputDir.appendingPathComponent(downloadedURL.lastPathComponent)
+                        try? FileManager.default.copyItem(at: downloadedURL, to: finalURL)
+                    } else {
+                        finalURL = downloadedURL
+                    }
+
+                    files[index].status = .completed
+                    files[index].url = finalURL
+                    return
+                }
+
                 files[index].url = downloadedURL
                 downloadedFileToCleanup = downloadedURL
             } catch {

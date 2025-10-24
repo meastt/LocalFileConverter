@@ -91,7 +91,7 @@ class ImageConverter: CommandLineConverter, FileConverter {
         options: ImageProcessingOptions?,
         progressHandler: @escaping (Double) -> Void
     ) async throws -> URL {
-        let outputURL = generateOutputURL(for: inputURL, targetFormat: targetFormat)
+        let outputURL = generateOutputURL(for: inputURL, targetFormat: targetFormat, customOutputDirectory: UserSettings.shared.outputDirectory)
 
         var arguments = [
             "convert",
@@ -246,7 +246,7 @@ class ImageConverter: CommandLineConverter, FileConverter {
         options: ImageProcessingOptions?,
         progressHandler: @escaping (Double) -> Void
     ) async throws -> URL {
-        let outputURL = generateOutputURL(for: inputURL, targetFormat: targetFormat)
+        let outputURL = generateOutputURL(for: inputURL, targetFormat: targetFormat, customOutputDirectory: UserSettings.shared.outputDirectory)
 
         let sipsFormat: String
         switch targetFormat.lowercased() {

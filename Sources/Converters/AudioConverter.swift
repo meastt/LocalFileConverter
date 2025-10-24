@@ -32,7 +32,7 @@ class AudioConverter: CommandLineConverter, FileConverter {
         targetFormat: String,
         progressHandler: @escaping (Double) -> Void
     ) async throws -> URL {
-        let outputURL = generateOutputURL(for: inputURL, targetFormat: targetFormat)
+        let outputURL = generateOutputURL(for: inputURL, targetFormat: targetFormat, customOutputDirectory: UserSettings.shared.outputDirectory)
 
         var arguments = [
             "-i", inputURL.path,
