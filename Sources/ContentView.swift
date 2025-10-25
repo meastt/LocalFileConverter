@@ -23,7 +23,23 @@ struct ContentView: View {
             ZStack {
                 if selectedTool == .settings {
                     SettingsView()
+                } else if let tool = selectedTool, tool != .all {
+                    // Show dedicated tool screen for each category
+                    ToolCategoryView(
+                        category: tool,
+                        conversionManager: conversionManager,
+                        isDragging: $isDragging,
+                        showingFilePicker: $showingFilePicker,
+                        showingURLInput: $showingURLInput,
+                        showingLoadingOverlay: $showingLoadingOverlay,
+                        loadingMessage: $loadingMessage
+                    )
+                    .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
+                        handleDrop(providers: providers)
+                        return true
+                    }
                 } else if conversionManager.files.isEmpty {
+                    // Show main dashboard only when no tool is selected and no files
                     DashboardView(
                         selectedTool: $selectedTool,
                         isDragging: $isDragging,
@@ -38,6 +54,7 @@ struct ContentView: View {
                         return true
                     }
                 } else {
+                    // Show workspace when files are present
                     WorkspaceView(
                         conversionManager: conversionManager,
                         isDragging: $isDragging,
@@ -243,7 +260,7 @@ struct SidebarView: View {
                             isSelected: selectedTool == category
                         )
                         .onTapGesture {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
                                 selectedTool = category
                             }
                         }
@@ -342,7 +359,7 @@ struct DashboardView: View {
                             .font(.system(size: 56))
                             .foregroundStyle(isDragging ? .linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing) : tool.gradient)
                             .scaleEffect(isDragging ? 1.1 : 1.0)
-                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isDragging)
+                            .animation(.none, value: isDragging)
 
                         Text(isDragging ? "Drop \(tool.rawValue) Files Here!" : tool.rawValue)
                             .font(.system(size: 32, weight: .bold))
@@ -356,7 +373,7 @@ struct DashboardView: View {
                             .font(.system(size: 56))
                             .foregroundStyle(.linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
                             .scaleEffect(isDragging ? 1.1 : 1.0)
-                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isDragging)
+                            .animation(.none, value: isDragging)
 
                         Text(isDragging ? "Drop Files Here!" : "Choose Your Tool")
                             .font(.system(size: 32, weight: .bold))
@@ -418,12 +435,10 @@ struct DashboardView: View {
                     ForEach(ToolCategory.allCases.filter { $0 != .settings }) { category in
                         ToolCategoryCard(category: category)
                             .onTapGesture {
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                withAnimation(.easeInOut(duration: 0.2)) {
                                     selectedTool = category
                                 }
-                                if category != .settings {
-                                    showingFilePicker = true
-                                }
+                                // Don't open file picker immediately - let user explore the tool screen first
                             }
                     }
                 }
@@ -475,7 +490,7 @@ struct QuickActionButton: View {
                     .strokeBorder(color.opacity(isHovered ? 0.5 : 0.3), lineWidth: 1.5)
             )
             .scaleEffect(isHovered ? 1.02 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovered)
+            .animation(.easeInOut(duration: 0.15), value: isHovered)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -1216,5 +1231,178 @@ extension ConversionStatus {
         case .completed: return "checkmark.circle.fill"
         case .failed: return "exclamationmark.triangle.fill"
         }
+    }
+}
+
+// MARK: - Tool Category View
+struct ToolCategoryView: View {
+    let category: ToolCategory
+    @ObservedObject var conversionManager: ConversionManager
+    @Binding var isDragging: Bool
+    @Binding var showingFilePicker: Bool
+    @Binding var showingURLInput: Bool
+    @Binding var showingLoadingOverlay: Bool
+    @Binding var loadingMessage: String
+    
+    var filteredFiles: [ConversionFile] {
+        return conversionManager.files.filter { file in
+            switch category {
+            case .image: return file.fileType == .image
+            case .video: return file.fileType == .video
+            case .audio: return file.fileType == .audio
+            case .document: return file.fileType == .document
+            case .archive: return file.fileType == .archive
+            default: return true
+            }
+        }
+    }
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 32) {
+                // Header Section
+                VStack(spacing: 16) {
+                    Image(systemName: isDragging ? "arrow.down.circle.fill" : category.icon)
+                        .font(.system(size: 56))
+                        .foregroundStyle(isDragging ? .linearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing) : category.gradient)
+                        .scaleEffect(isDragging ? 1.1 : 1.0)
+                        .animation(.none, value: isDragging)
+                    
+                    Text(isDragging ? "Drop \(category.rawValue) Here!" : category.rawValue)
+                        .font(.system(size: 32, weight: .bold))
+                    
+                    Text(category.description)
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.top, 40)
+                
+                // Action Buttons
+                HStack(spacing: 16) {
+                    Button(action: { showingFilePicker = true }) {
+                        Label("Add \(category.rawValue)", systemImage: "folder.badge.plus")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(category.gradient)
+                            .cornerRadius(12)
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut("o", modifiers: .command)
+                    .accessibilityLabel("Add \(category.rawValue)")
+                    .accessibilityHint("Browse and select \(category.rawValue.lowercased()) files to convert")
+                    
+                    if category == .video {
+                        Button(action: {
+                            VideoURLPrompt.show { url in
+                                if let url = url {
+                                    Task { @MainActor in
+                                        withAnimation {
+                                            loadingMessage = "Fetching video info..."
+                                            showingLoadingOverlay = true
+                                        }
+                                        
+                                        let startTime = Date()
+                                        await conversionManager.addVideoURL(url)
+                                        let elapsed = Date().timeIntervalSince(startTime)
+                                        let minimumDisplayTime = 0.5
+                                        if elapsed < minimumDisplayTime {
+                                            try? await Task.sleep(nanoseconds: UInt64((minimumDisplayTime - elapsed) * 1_000_000_000))
+                                        }
+                                        
+                                        withAnimation {
+                                            showingLoadingOverlay = false
+                                        }
+                                    }
+                                }
+                            }
+                        }) {
+                            Label("Add Video URL", systemImage: "link.badge.plus")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .background(LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut("u", modifiers: .command)
+                        .accessibilityLabel("Add Video URL")
+                        .accessibilityHint("Download video from URL")
+                    }
+                }
+                .padding(.horizontal, 40)
+                
+                // Files Section
+                if !filteredFiles.isEmpty {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Text("\(filteredFiles.count) \(category.rawValue.lowercased()) files")
+                                .font(.system(size: 20, weight: .semibold))
+                            
+                            Spacer()
+                            
+                            Button(action: { conversionManager.clearAll() }) {
+                                Label("Clear All", systemImage: "trash")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.red)
+                            .keyboardShortcut("k", modifiers: .command)
+                            .accessibilityLabel("Clear All")
+                            .accessibilityHint("Remove all files from the list")
+                        }
+                        
+                        LazyVStack(spacing: 12) {
+                            ForEach(filteredFiles) { file in
+                                EnhancedFileRowView(file: file, conversionManager: conversionManager)
+                            }
+                        }
+                        
+                        // Convert Button
+                        Button(action: {
+                            Task {
+                                conversionManager.convertAll()
+                            }
+                        }) {
+                            Label("Convert All \(category.rawValue)", systemImage: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(category.gradient)
+                                .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(conversionManager.isConverting || filteredFiles.isEmpty)
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .accessibilityLabel(conversionManager.isConverting ? "Converting files" : "Convert all files")
+                        .accessibilityHint("Start converting all files in the list")
+                    }
+                    .padding(.horizontal, 40)
+                } else {
+                    // Empty State
+                    VStack(spacing: 16) {
+                        Image(systemName: category.icon)
+                            .font(.system(size: 48))
+                            .foregroundStyle(category.gradient)
+                            .opacity(0.6)
+                        
+                        Text("No \(category.rawValue.lowercased()) files yet")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.secondary)
+                        
+                        Text("Add files to get started with \(category.rawValue.lowercased()) conversion")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 60)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

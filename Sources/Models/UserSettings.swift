@@ -75,7 +75,7 @@ class UserSettings: ObservableObject {
         if let url = outputDirectory {
             return url.path
         } else {
-            return "Default (Temporary Folder)"
+            return "Default (Downloads/Converted Files)"
         }
     }
 }
