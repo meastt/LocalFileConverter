@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App Sandbox -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- File Access -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- Network Client (for video downloads via yt-dlp) -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Allow executing external tools (ffmpeg, imagemagick, pandoc, etc.) -->
+    <!-- Note: This requires command-line tools to be installed in standard locations -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <false/>
+
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <false/>
+
+    <key>com.apple.security.cs.disable-executable-page-protection</key>
+    <false/>
+
+    <!-- Hardened Runtime -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <false/>
+
+    <!-- Temporary Exception: Required for executing Homebrew tools -->
+    <!-- This may need to be addressed for App Store submission -->
+    <!-- Consider bundling tools or using helper process -->
+    <key>com.apple.security.temporary-exception.apple-events</key>
+    <false/>
+</dict>
+</plist>
