@@ -1,5 +1,27 @@
 import Foundation
 
+// Actor for thread-safe data collection during process execution
+actor ProcessDataCollector {
+    private var outputData = Data()
+    private var errorData = Data()
+    
+    func appendOutput(_ data: Data) {
+        outputData.append(data)
+    }
+    
+    func appendError(_ data: Data) {
+        errorData.append(data)
+    }
+    
+    func getOutput() -> Data {
+        return outputData
+    }
+    
+    func getError() -> Data {
+        return errorData
+    }
+}
+
 protocol FileConverter {
     func convert(
         inputURL: URL,
@@ -49,11 +71,8 @@ class CommandLineConverter {
             process.currentDirectoryURL = workingDirectory
         }
 
-        // Use NSLock for thread-safe data collection
-        let outputLock = NSLock()
-        let errorLock = NSLock()
-        var outputData = Data()
-        var errorData = Data()
+        // Use actor for thread-safe data collection
+        let dataCollector = ProcessDataCollector()
 
         let outputHandle = outputPipe.fileHandleForReading
         let errorHandle = errorPipe.fileHandleForReading
@@ -62,18 +81,18 @@ class CommandLineConverter {
         outputHandle.readabilityHandler = { handle in
             let data = handle.availableData
             if data.count > 0 {
-                outputLock.lock()
-                outputData.append(data)
-                outputLock.unlock()
+                Task {
+                    await dataCollector.appendOutput(data)
+                }
             }
         }
 
         errorHandle.readabilityHandler = { handle in
             let data = handle.availableData
             if data.count > 0 {
-                errorLock.lock()
-                errorData.append(data)
-                errorLock.unlock()
+                Task {
+                    await dataCollector.appendError(data)
+                }
             }
         }
 
@@ -87,8 +106,9 @@ class CommandLineConverter {
                     while progress < 0.9 && process.isRunning {
                         try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
                         progress += 0.05
+                        let currentProgress = progress
                         await MainActor.run {
-                            progressHandler(progress)
+                            progressHandler(currentProgress)
                         }
                     }
                 }
@@ -107,23 +127,20 @@ class CommandLineConverter {
 
                     let status = process.terminationStatus
 
-                    outputLock.lock()
-                    let finalOutput = outputData
-                    outputLock.unlock()
+                    Task {
+                        let finalOutput = await dataCollector.getOutput()
+                        let finalError = await dataCollector.getError()
 
-                    errorLock.lock()
-                    let finalError = errorData
-                    errorLock.unlock()
+                        DispatchQueue.main.async {
+                            progressHandler(1.0)
 
-                    DispatchQueue.main.async {
-                        progressHandler(1.0)
-
-                        if status == 0 {
-                            let output = String(data: finalOutput, encoding: .utf8) ?? ""
-                            continuation.resume(returning: output)
-                        } else {
-                            let error = String(data: finalError, encoding: .utf8) ?? "Unknown error"
-                            continuation.resume(throwing: ConversionError.conversionFailed(error))
+                            if status == 0 {
+                                let output = String(data: finalOutput, encoding: .utf8) ?? ""
+                                continuation.resume(returning: output)
+                            } else {
+                                let error = String(data: finalError, encoding: .utf8) ?? "Unknown error"
+                                continuation.resume(throwing: ConversionError.conversionFailed(error))
+                            }
                         }
                     }
                 }
