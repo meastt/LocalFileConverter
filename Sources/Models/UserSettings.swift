@@ -28,8 +28,12 @@ class UserSettings: ObservableObject {
             )
             outputDirectoryBookmark = bookmark
             outputDirectory = url
+            print("Successfully set output directory to: \(url.path)")
         } catch {
             print("Failed to create bookmark: \(error)")
+            // Clear any partial state
+            outputDirectoryBookmark = nil
+            outputDirectory = nil
         }
     }
 
@@ -49,8 +53,10 @@ class UserSettings: ObservableObject {
             )
 
             if isStale {
-                // Recreate the bookmark
-                setOutputDirectory(url)
+                // Clear the stale bookmark instead of trying to recreate it
+                // This prevents infinite recursion
+                print("Bookmark is stale, clearing output directory")
+                clearOutputDirectory()
             } else {
                 outputDirectory = url
             }
